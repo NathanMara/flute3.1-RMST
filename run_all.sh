@@ -19,5 +19,5 @@ for infile in input/*.txt; do
   ./checker/checker "$infile" "$outfile"
 
   echo "---------------------Creating Img $imgfile---------------------"
-  python3 ./plot/steiner_plot.py -i "$infile" -o "$outfile" -p "$imgfile"
+  python3 ./plot/steiner_plot.py -i "$infile" -o "$outfile" -p "$imgfile" > /dev/null 2>&1
 done

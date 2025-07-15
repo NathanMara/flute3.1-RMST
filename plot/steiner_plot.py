@@ -178,6 +178,47 @@ class SteinerPlot:
         self.params['boundary_linewidth'] /= scale_factor
         self.params['edge_linewidth'] /= scale_factor
 
+    def _draw_grid(self, context: cairo.Context) -> None:
+        """Draw internal grid lines and small coordinate labels."""
+        bdry_xl, bdry_yl, bdry_xh, bdry_yh = self._get_boundary()
+        bdry_width, bdry_height = bdry_xh - bdry_xl, bdry_yh - bdry_yl
+
+        num_x_lines = bdry_width // 10 - 1
+        num_y_lines = bdry_height // 10 - 1
+
+        context.set_source_rgba(0.6, 0.6, 0.6, 0.3)
+        context.set_line_width(0.5)
+
+        for i in range(1, num_x_lines + 1):
+            x = bdry_xl + i * 10
+            context.move_to(x, bdry_yl)
+            context.line_to(x, bdry_yh)
+            context.stroke()
+
+            context.save()
+            context.scale(1, -1)
+            context.set_source_rgba(0, 0, 0, 0.5)
+            context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            context.set_font_size(2.5)
+            context.move_to(x + 1, -bdry_yl + 5)
+            context.show_text(str(x))
+            context.restore()
+
+        for i in range(1, num_y_lines + 1):
+            y = bdry_yl + i * 10
+            context.move_to(bdry_xl, y)
+            context.line_to(bdry_xh, y)
+            context.stroke()
+
+            context.save()
+            context.scale(1, -1)
+            context.set_source_rgba(0, 0, 0, 0.5)
+            context.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            context.set_font_size(2.5)
+            context.move_to(bdry_xl + 2, -y + 2)
+            context.show_text(str(y))
+            context.restore()
+
     def _draw_boundary(self, context: cairo.Context) -> None:
         """Draw the boundary of the plot.
 
@@ -241,11 +282,9 @@ class SteinerPlot:
         Args:
             filename(str): The path to the output png file.
         """
-        # Create a plot.
         print('[SteinerPlot] Creating plot...')
         surface_width, surface_height = self._get_surface_size()
-        surface = cairo.ImageSurface(
-            cairo.FORMAT_ARGB32, surface_width, surface_height)
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, surface_width, surface_height)
         context = cairo.Context(surface)
 
         # Set the background color (optional, to fill the canvas)
@@ -269,29 +308,24 @@ class SteinerPlot:
         context.translate((surface_width / scale_factor - bdry_width) / 2,
                           (surface_height / scale_factor - bdry_height) / 2)
 
-        # Adjust the linewidth based on the scale factor. Because the linewidth
-        # will be scaled down by the same factor as the coordinates, we need to
-        # scale it back up to maintain the same visual appearance.
+        # Adjust the linewidth based on the scale factor.
         self._adjust_linewidth(scale_factor)
 
+        # Draw grid lines first (so other items draw on top).
+        self._draw_grid(context)
+
         # Draw the Steiner tree.
-        # Boundary.
         if 'boundary' in self.data:
             self._draw_boundary(context)
-        # Nodes.
         if 'nodes' in self.data:
             self._draw_nodes(context)
-        # Edges.
         if 'edges' in self.data:
             self._draw_edges(context)
 
-        # Make sure the png_name is not None.
         if filename is None:
             filename = SteinerPlot.DEFAULT_PNG_NAME
-            print(f'[CairoPlot] No PNG file name specified. '
-                  f'Saving to \'{filename}\'...')
+            print(f'[CairoPlot] No PNG file name specified. Saving to \'{filename}\'...')
 
-        # Save the image to a png file
         surface.write_to_png(filename)
         print(f'[CairoPlot] Image saved to \'{filename}\'.')
 
@@ -304,36 +338,26 @@ def main() -> None:
         -o, --output (str): The path to the output file. (optional)
         -p, --png (str): The name of the output png file. (optional)
     """
-    # Args parser.
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--input', action='store',
-                        default=None, help='input file name')
-    parser.add_argument('-o', '--output', action='store',
-                        default=None, help='output file name')
-    parser.add_argument('-p', '--png', action='store',
-                        default=None,
-                        help='output png file name')
+    parser.add_argument('-i', '--input', action='store', default=None, help='input file name')
+    parser.add_argument('-o', '--output', action='store', default=None, help='output file name')
+    parser.add_argument('-p', '--png', action='store', default=None, help='output png file name')
     args = parser.parse_args()
 
     print(f'[Main] Input: {args.input}')
     print(f'[Main] Output: {args.output}')
     print(f'[Main] PNG: {args.png}')
 
-    # Initialize the plotter.
     plotter = SteinerPlot()
-
-    # Read the input file.
     if args.input is not None:
         plotter.read_input(args.input)
-    else:  # No input file specified.
+    else:
         print('[Main] No input file specified. Exiting...')
         return
 
-    # Read the output file.
     if args.output is not None:
         plotter.read_output(args.output)
 
-    # Save the Steiner tree to a png file.
     plotter.save(args.png)
 
 
