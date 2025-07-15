@@ -4,6 +4,9 @@
 #ifndef GRAPH_H_
 #define GRAPH_H_
 
+#include <tuple>       // for std::tie
+#include <functional>  // for std::hash
+
 namespace graph {
 
 // Boundary struct.
@@ -29,6 +32,19 @@ struct Node {
 
   T x;  // x-coordinate.
   T y;  // y-coordinate.
+
+  // Equality operators (needed for unordered_set and comparisons)
+  bool operator==(const Node<T>& other) const {
+    return x == other.x && y == other.y;
+  }
+  bool operator!=(const Node<T>& other) const {
+    return !(*this == other);
+  }
+
+  // Lexicographic order (optional, useful for canonical edge comparisons)
+  bool operator<(const Node<T>& other) const {
+    return std::tie(x, y) < std::tie(other.x, other.y);
+  }
 };
 
 // Edge struct.
@@ -49,5 +65,16 @@ using Node_i = Node<int>;
 using Edge_i = Edge<int>;
 
 }  // namespace graph
+
+// Hash specialization for graph::Node<int> (must be outside the namespace)
+namespace std {
+template <>
+struct hash<graph::Node<int>> {
+  std::size_t operator()(const graph::Node<int>& p) const {
+    // Combine hashes for x and y
+    return std::hash<int>()(p.x) ^ (std::hash<int>()(p.y) << 1);
+  }
+};
+}
 
 #endif  // GRAPH_H_
