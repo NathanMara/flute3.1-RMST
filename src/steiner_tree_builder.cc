@@ -7,6 +7,7 @@
 #include <tuple>
 #include <optional>
 #include <functional>
+#include <algorithm>  // for std::sort
 
 #include "graph.h"
 #include "flute.h"
@@ -29,13 +30,15 @@ std::pair<graph::Node_i, graph::Node_i> canonical(const graph::Node_i& a, const 
   return (std::tie(a.x, a.y) < std::tie(b.x, b.y)) ? std::make_pair(a, b) : std::make_pair(b, a);
 }
 
-// Check if a new edge would overlap and return adjusted edge or nullopt
-std::optional<std::pair<graph::Node_i, graph::Node_i>>
+// Check if a new edge would overlap and return adjusted edges or split edges if nodes in between
+std::vector<std::pair<graph::Node_i, graph::Node_i>>
 resolve_overlap(const graph::Node_i& a, const graph::Node_i& b,
-                const std::unordered_set<std::pair<graph::Node_i, graph::Node_i>, pair_hash>& seen) {
+                const std::unordered_set<std::pair<graph::Node_i, graph::Node_i>, pair_hash>& seen,
+                const std::vector<graph::Node_i>& all_nodes) {
   graph::Node_i p1 = (std::tie(a.x, a.y) < std::tie(b.x, b.y)) ? a : b;
   graph::Node_i p2 = (std::tie(a.x, a.y) < std::tie(b.x, b.y)) ? b : a;
 
+  // Check for overlapping existing edges (your existing logic)
   for (const auto& edge : seen) {
     graph::Node_i q1 = edge.first;
     graph::Node_i q2 = edge.second;
@@ -48,16 +51,16 @@ resolve_overlap(const graph::Node_i& a, const graph::Node_i& b,
       int q_start = std::min(q1.x, q2.x);
       int q_end = std::max(q1.x, q2.x);
       if (!(p_end <= q_start || p_start >= q_end)) {
-        if (p1.x >= q_start && p1.x < q_end && p2.x >= q_start && p2.x < q_end) return std::nullopt;
+        if (p1.x >= q_start && p1.x < q_end && p2.x >= q_start && p2.x < q_end) return {};
         if (p1.x >= q_start && p1.x < q_end) {
           graph::Node_i new_p1(q_end, p1.y);
-          if (new_p1 == p2) return std::nullopt;
-          return std::make_pair(new_p1, p2);
+          if (new_p1 == p2) return {};
+          return {std::make_pair(new_p1, p2)};
         }
         if (p2.x >= q_start && p2.x < q_end) {
           graph::Node_i new_p2(q_start - 1, p2.y);
-          if (p1 == new_p2) return std::nullopt;
-          return std::make_pair(p1, new_p2);
+          if (p1 == new_p2) return {};
+          return {std::make_pair(p1, new_p2)};
         }
       }
     }
@@ -67,21 +70,68 @@ resolve_overlap(const graph::Node_i& a, const graph::Node_i& b,
       int q_start = std::min(q1.y, q2.y);
       int q_end = std::max(q1.y, q2.y);
       if (!(p_end <= q_start || p_start >= q_end)) {
-        if (p1.y >= q_start && p1.y < q_end && p2.y >= q_start && p2.y < q_end) return std::nullopt;
+        if (p1.y >= q_start && p1.y < q_end && p2.y >= q_start && p2.y < q_end) return {};
         if (p1.y >= q_start && p1.y < q_end) {
           graph::Node_i new_p1(p1.x, q_end);
-          if (new_p1 == p2) return std::nullopt;
-          return std::make_pair(new_p1, p2);
+          if (new_p1 == p2) return {};
+          return {std::make_pair(new_p1, p2)};
         }
         if (p2.y >= q_start && p2.y < q_end) {
           graph::Node_i new_p2(p2.x, q_start - 1);
-          if (p1 == new_p2) return std::nullopt;
-          return std::make_pair(p1, new_p2);
+          if (p1 == new_p2) return {};
+          return {std::make_pair(p1, new_p2)};
         }
       }
     }
   }
-  return std::make_pair(p1, p2);
+
+  // Now check if edge passes through any node in between endpoints, split if so
+  std::vector<graph::Node_i> nodes_between;
+
+  if (p1.y == p2.y) { // horizontal edge
+    int y = p1.y;
+    int x_start = p1.x;
+    int x_end = p2.x;
+    for (const auto& node : all_nodes) {
+      if (node.y == y && node.x > x_start && node.x < x_end) {
+        nodes_between.push_back(node);
+      }
+    }
+  } else if (p1.x == p2.x) { // vertical edge
+    int x = p1.x;
+    int y_start = p1.y;
+    int y_end = p2.y;
+    for (const auto& node : all_nodes) {
+      if (node.x == x && node.y > y_start && node.y < y_end) {
+        nodes_between.push_back(node);
+      }
+    }
+  }
+
+  if (!nodes_between.empty()) {
+    // Sort nodes_between to split edges in order
+    std::sort(nodes_between.begin(), nodes_between.end(), [&](const graph::Node_i& n1, const graph::Node_i& n2) {
+      if (p1.x == p2.x) return n1.y < n2.y;  // vertical line: sort by y
+      else return n1.x < n2.x;               // horizontal line: sort by x
+    });
+
+    std::vector<std::pair<graph::Node_i, graph::Node_i>> split_edges;
+
+    graph::Node_i last = p1;
+    for (const auto& node : nodes_between) {
+      if (last != node) {
+        split_edges.emplace_back(last, node);
+      }
+      last = node;
+    }
+    if (last != p2) {
+      split_edges.emplace_back(last, p2);
+    }
+    return split_edges;
+  }
+
+  // No splitting needed, return single edge
+  return { std::make_pair(p1, p2) };
 }
 
 std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
@@ -118,11 +168,14 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
     if (p1 == p2) continue;
 
     if (p1.x == p2.x || p1.y == p2.y) {
-      auto opt = resolve_overlap(p1, p2, seen);
-      if (opt) {
-        auto canon = canonical(opt->first, opt->second);
-        edges.emplace_back(canon.first, canon.second);
-        seen.insert(canon);
+      // resolve_overlap now returns vector of edges
+      auto new_edges = resolve_overlap(p1, p2, seen, nodes);
+      for (const auto& e : new_edges) {
+        auto canon = canonical(e.first, e.second);
+        if (seen.find(canon) == seen.end()) {
+          edges.emplace_back(canon.first, canon.second);
+          seen.insert(canon);
+        }
       }
     } else {
       diagonal_edges.emplace_back(p1, p2);
@@ -130,11 +183,13 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
   }
 
   auto try_add = [&](const graph::Node_i& a, const graph::Node_i& b) {
-    auto opt = resolve_overlap(a, b, seen);
-    if (opt) {
-      auto canon = canonical(opt->first, opt->second);
-      edges.emplace_back(canon.first, canon.second);
-      seen.insert(canon);
+    auto new_edges = resolve_overlap(a, b, seen, nodes);
+    for (const auto& e : new_edges) {
+      auto canon = canonical(e.first, e.second);
+      if (seen.find(canon) == seen.end()) {
+        edges.emplace_back(canon.first, canon.second);
+        seen.insert(canon);
+      }
     }
   };
 
@@ -143,12 +198,12 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
     graph::Node_i mid2(p2.x, p1.y);
 
     bool valid1 = (p1 != mid1 && mid1 != p2) &&
-                  resolve_overlap(p1, mid1, seen).has_value() &&
-                  resolve_overlap(mid1, p2, seen).has_value();
+                  !resolve_overlap(p1, mid1, seen, nodes).empty() &&
+                  !resolve_overlap(mid1, p2, seen, nodes).empty();
 
     bool valid2 = (p1 != mid2 && mid2 != p2) &&
-                  resolve_overlap(p1, mid2, seen).has_value() &&
-                  resolve_overlap(mid2, p2, seen).has_value();
+                  !resolve_overlap(p1, mid2, seen, nodes).empty() &&
+                  !resolve_overlap(mid2, p2, seen, nodes).empty();
 
     if (valid1 || !valid2) {
       try_add(p1, mid1);
