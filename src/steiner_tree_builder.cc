@@ -34,11 +34,10 @@ std::pair<graph::Node_i, graph::Node_i> canonical(const graph::Node_i& a, const 
 std::vector<std::pair<graph::Node_i, graph::Node_i>>
 resolve_overlap(const graph::Node_i& a, const graph::Node_i& b,
                 const std::unordered_set<std::pair<graph::Node_i, graph::Node_i>, pair_hash>& seen,
-                const std::vector<graph::Node_i>& all_nodes) {
+                const std::unordered_set<graph::Node_i>& all_nodes) {
   graph::Node_i p1 = (std::tie(a.x, a.y) < std::tie(b.x, b.y)) ? a : b;
   graph::Node_i p2 = (std::tie(a.x, a.y) < std::tie(b.x, b.y)) ? b : a;
 
-  // Check for overlapping existing edges (your existing logic)
   for (const auto& edge : seen) {
     graph::Node_i q1 = edge.first;
     graph::Node_i q2 = edge.second;
@@ -85,38 +84,30 @@ resolve_overlap(const graph::Node_i& a, const graph::Node_i& b,
     }
   }
 
-  // Now check if edge passes through any node in between endpoints, split if so
   std::vector<graph::Node_i> nodes_between;
 
-  if (p1.y == p2.y) { // horizontal edge
+  if (p1.y == p2.y) {
     int y = p1.y;
-    int x_start = p1.x;
-    int x_end = p2.x;
-    for (const auto& node : all_nodes) {
-      if (node.y == y && node.x > x_start && node.x < x_end) {
-        nodes_between.push_back(node);
+    for (int x = p1.x + 1; x < p2.x; ++x) {
+      if (all_nodes.count(graph::Node_i(x, y))) {
+        nodes_between.emplace_back(x, y);
       }
     }
-  } else if (p1.x == p2.x) { // vertical edge
+  } else if (p1.x == p2.x) {
     int x = p1.x;
-    int y_start = p1.y;
-    int y_end = p2.y;
-    for (const auto& node : all_nodes) {
-      if (node.x == x && node.y > y_start && node.y < y_end) {
-        nodes_between.push_back(node);
+    for (int y = p1.y + 1; y < p2.y; ++y) {
+      if (all_nodes.count(graph::Node_i(x, y))) {
+        nodes_between.emplace_back(x, y);
       }
     }
   }
 
   if (!nodes_between.empty()) {
-    // Sort nodes_between to split edges in order
     std::sort(nodes_between.begin(), nodes_between.end(), [&](const graph::Node_i& n1, const graph::Node_i& n2) {
-      if (p1.x == p2.x) return n1.y < n2.y;  // vertical line: sort by y
-      else return n1.x < n2.x;               // horizontal line: sort by x
+      return (p1.x == p2.x) ? n1.y < n2.y : n1.x < n2.x;
     });
 
     std::vector<std::pair<graph::Node_i, graph::Node_i>> split_edges;
-
     graph::Node_i last = p1;
     for (const auto& node : nodes_between) {
       if (last != node) {
@@ -130,7 +121,6 @@ resolve_overlap(const graph::Node_i& a, const graph::Node_i& b,
     return split_edges;
   }
 
-  // No splitting needed, return single edge
   return { std::make_pair(p1, p2) };
 }
 
@@ -156,6 +146,13 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
 
   Flute::Tree tree = Flute::flute(n, x.data(), y.data(), 9);
   std::unordered_set<std::pair<graph::Node_i, graph::Node_i>, pair_hash> seen;
+  std::unordered_set<graph::Node_i> all_nodes;
+
+  // Add all tree branch points as Steiner or input nodes
+  for (int i = 0; i < 2 * tree.deg - 2; ++i) {
+    all_nodes.emplace(tree.branch[i].x, tree.branch[i].y);
+  }
+
   std::vector<std::pair<graph::Node_i, graph::Node_i>> diagonal_edges;
 
   int num_branches = 2 * tree.deg - 2;
@@ -168,8 +165,7 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
     if (p1 == p2) continue;
 
     if (p1.x == p2.x || p1.y == p2.y) {
-      // resolve_overlap now returns vector of edges
-      auto new_edges = resolve_overlap(p1, p2, seen, nodes);
+      auto new_edges = resolve_overlap(p1, p2, seen, all_nodes);
       for (const auto& e : new_edges) {
         auto canon = canonical(e.first, e.second);
         if (seen.find(canon) == seen.end()) {
@@ -183,7 +179,7 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
   }
 
   auto try_add = [&](const graph::Node_i& a, const graph::Node_i& b) {
-    auto new_edges = resolve_overlap(a, b, seen, nodes);
+    auto new_edges = resolve_overlap(a, b, seen, all_nodes);
     for (const auto& e : new_edges) {
       auto canon = canonical(e.first, e.second);
       if (seen.find(canon) == seen.end()) {
@@ -198,15 +194,17 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
     graph::Node_i mid2(p2.x, p1.y);
 
     bool valid1 = (p1 != mid1 && mid1 != p2) &&
-                  !resolve_overlap(p1, mid1, seen, nodes).empty() &&
-                  !resolve_overlap(mid1, p2, seen, nodes).empty();
+                  !resolve_overlap(p1, mid1, seen, all_nodes).empty() &&
+                  !resolve_overlap(mid1, p2, seen, all_nodes).empty();
 
     if (valid1) {
       try_add(p1, mid1);
       try_add(mid1, p2);
+      all_nodes.insert(mid1);
     } else {
       try_add(p1, mid2);
       try_add(mid2, p2);
+      all_nodes.insert(mid2);
     }
   }
 
