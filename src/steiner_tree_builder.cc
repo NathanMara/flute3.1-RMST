@@ -154,7 +154,7 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
     y[i] = nodes[i].y;
   }
 
-  Flute::Tree tree = Flute::flute(n, x.data(), y.data(), FLUTE_D);
+  Flute::Tree tree = Flute::flute(n, x.data(), y.data(), 9);
   std::unordered_set<std::pair<graph::Node_i, graph::Node_i>, pair_hash> seen;
   std::vector<std::pair<graph::Node_i, graph::Node_i>> diagonal_edges;
 
@@ -201,11 +201,7 @@ std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
                   !resolve_overlap(p1, mid1, seen, nodes).empty() &&
                   !resolve_overlap(mid1, p2, seen, nodes).empty();
 
-    bool valid2 = (p1 != mid2 && mid2 != p2) &&
-                  !resolve_overlap(p1, mid2, seen, nodes).empty() &&
-                  !resolve_overlap(mid2, p2, seen, nodes).empty();
-
-    if (valid1 || !valid2) {
+    if (valid1) {
       try_add(p1, mid1);
       try_add(mid1, p2);
     } else {
