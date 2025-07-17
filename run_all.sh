@@ -6,8 +6,7 @@ for infile in input/*.txt; do
   outfile="output/${base}_out.txt"
   imgfile="image/${base}.png"
 
-  echo "Processing $infile"
-  echo "---------------------Creating Output $outfile---------------------"
+  echo "---------------------Processing $infile---------------------"
 
   start=$(date +%s.%N)
   ./bin/steiner "$infile" "$outfile"
@@ -15,9 +14,8 @@ for infile in input/*.txt; do
   elapsed=$(echo "$end - $start" | bc)
   printf "Time taken: %.3f seconds\n" "$elapsed"
 
-  echo "---------------------Running Checker---------------------"
-  ./checker/checker "$infile" "$outfile"
+  ./checker/checker "$infile" "$outfile" 2>&1 | grep "^\[Checker\]"
 
-  echo "---------------------Creating Img $imgfile---------------------"
   python3 ./plot/steiner_plot.py -i "$infile" -o "$outfile" -p "$imgfile" > /dev/null 2>&1
+  echo "$imgfile"
 done
