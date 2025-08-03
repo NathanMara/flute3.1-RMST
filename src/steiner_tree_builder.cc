@@ -59,77 +59,106 @@ std::vector<std::pair<graph::Node_i, graph::Node_i>>
 resolve_overlap(const graph::Node_i& a, const graph::Node_i& b,
                 const std::unordered_set<std::pair<graph::Node_i, graph::Node_i>, pair_hash>& seen,
                 const std::unordered_set<graph::Node_i>& all_nodes) {
+  
   graph::Node_i p1 = (std::tie(a.x, a.y) < std::tie(b.x, b.y)) ? a : b;
   graph::Node_i p2 = (std::tie(a.x, a.y) < std::tie(b.x, b.y)) ? b : a;
 
+  // Check overlap against existing edges and split if necessary
   for (const auto& edge : seen) {
     graph::Node_i q1 = edge.first;
     graph::Node_i q2 = edge.second;
     if (std::tie(q1.x, q1.y) > std::tie(q2.x, q2.y)) std::swap(q1, q2);
 
-    if (p1.y == p2.y && q1.y == q2.y && p1.y == q1.y) {
-      int p_start = std::min(p1.x, p2.x);
-      int p_end = std::max(p1.x, p2.x);
-      int q_start = std::min(q1.x, q2.x);
-      int q_end = std::max(q1.x, q2.x);
-      if (!(p_end <= q_start || p_start >= q_end)) {
-        if (p1.x >= q_start && p1.x < q_end && p2.x >= q_start && p2.x < q_end) return {};
-        if (p1.x >= q_start && p1.x < q_end) {
-          graph::Node_i new_p1(q_end, p1.y);
-          if (new_p1 == p2) return {};
-          return {std::make_pair(new_p1, p2)};
-        }
-        if (p2.x >= q_start && p2.x < q_end) {
-          graph::Node_i new_p2(q_start - 1, p2.y);
-          if (p1 == new_p2) return {};
-          return {std::make_pair(p1, new_p2)};
-        }
-      }
-    }
-
     if (p1.x == p2.x && q1.x == q2.x && p1.x == q1.x) {
+      // Vertical overlap
       int p_start = std::min(p1.y, p2.y);
       int p_end = std::max(p1.y, p2.y);
       int q_start = std::min(q1.y, q2.y);
       int q_end = std::max(q1.y, q2.y);
+
       if (!(p_end <= q_start || p_start >= q_end)) {
-        if (p1.y >= q_start && p1.y < q_end && p2.y >= q_start && p2.y < q_end) return {};
-        if (p1.y >= q_start && p1.y < q_end) {
-          graph::Node_i new_p1(p1.x, q_end);
-          if (new_p1 == p2) return {};
-          return {std::make_pair(new_p1, p2)};
+        // Overlapping intervals, split edge into disjoint parts excluding the overlapping region
+        std::vector<std::pair<graph::Node_i, graph::Node_i>> parts;
+
+        if (p_start < q_start) {
+          auto first_part = resolve_overlap(p1, graph::Node_i(p1.x, q_start), seen, all_nodes);
+          parts.insert(parts.end(), first_part.begin(), first_part.end());
         }
-        if (p2.y >= q_start && p2.y < q_end) {
-          graph::Node_i new_p2(p2.x, q_start - 1);
-          if (p1 == new_p2) return {};
-          return {std::make_pair(p1, new_p2)};
+        if (p_end > q_end) {
+          auto second_part = resolve_overlap(graph::Node_i(p1.x, q_end), p2, seen, all_nodes);
+          parts.insert(parts.end(), second_part.begin(), second_part.end());
         }
+        return parts;
+      }
+    }
+
+    if (p1.y == p2.y && q1.y == q2.y && p1.y == q1.y) {
+      // Horizontal overlap
+      int p_start = std::min(p1.x, p2.x);
+      int p_end = std::max(p1.x, p2.x);
+      int q_start = std::min(q1.x, q2.x);
+      int q_end = std::max(q1.x, q2.x);
+
+      if (!(p_end <= q_start || p_start >= q_end)) {
+        std::vector<std::pair<graph::Node_i, graph::Node_i>> parts;
+
+        if (p_start < q_start) {
+          auto first_part = resolve_overlap(p1, graph::Node_i(q_start, p1.y), seen, all_nodes);
+          parts.insert(parts.end(), first_part.begin(), first_part.end());
+        }
+        if (p_end > q_end) {
+          auto second_part = resolve_overlap(graph::Node_i(q_end, p1.y), p2, seen, all_nodes);
+          parts.insert(parts.end(), second_part.begin(), second_part.end());
+        }
+        return parts;
       }
     }
   }
 
-  auto nodes_between = get_nodes_between(p1, p2, all_nodes);
-  if (!nodes_between.empty()) {
-    std::sort(nodes_between.begin(), nodes_between.end(), [&](const graph::Node_i& n1, const graph::Node_i& n2) {
-      return (p1.x == p2.x) ? n1.y < n2.y : n1.x < n2.x;
+  // No overlap, split at intermediate nodes (all nodes between p1 and p2)
+  std::vector<graph::Node_i> intermediate_nodes;
+  if (p1.x == p2.x) {
+    int x = p1.x;
+    for (const auto& node : all_nodes) {
+      if (node.x == x && node.y > p1.y && node.y < p2.y) {
+        intermediate_nodes.push_back(node);
+      }
+    }
+    std::sort(intermediate_nodes.begin(), intermediate_nodes.end(), [](const auto& n1, const auto& n2) {
+      return n1.y < n2.y;
     });
-
-    std::vector<std::pair<graph::Node_i, graph::Node_i>> split_edges;
-    graph::Node_i last = p1;
-    for (const auto& node : nodes_between) {
-      if (last != node) {
-        split_edges.emplace_back(last, node);
+  } else if (p1.y == p2.y) {
+    int y = p1.y;
+    for (const auto& node : all_nodes) {
+      if (node.y == y && node.x > p1.x && node.x < p2.x) {
+        intermediate_nodes.push_back(node);
       }
-      last = node;
     }
-    if (last != p2) {
-      split_edges.emplace_back(last, p2);
-    }
-    return split_edges;
+    std::sort(intermediate_nodes.begin(), intermediate_nodes.end(), [](const auto& n1, const auto& n2) {
+      return n1.x < n2.x;
+    });
+  } else {
+    // Not axis aligned, return as is
+    return { std::make_pair(p1, p2) };
   }
 
-  return { std::make_pair(p1, p2) };
+  // Build edges p1 -> intermediate nodes -> p2
+  std::vector<std::pair<graph::Node_i, graph::Node_i>> result;
+  graph::Node_i last = p1;
+  for (const auto& node : intermediate_nodes) {
+    if (!(last == node)) {
+      result.emplace_back(last, node);
+    }
+    last = node;
+  }
+  if (!(last == p2)) {
+    result.emplace_back(last, p2);
+  }
+
+  return result;
 }
+
+
 
 std::vector<graph::Edge_i> SteinerTreeBuilder::Solve(
     const graph::Boundary_i& /*boundary*/,
