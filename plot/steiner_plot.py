@@ -47,8 +47,6 @@ class SteinerPlot:
     def read_input(self, filename: str) -> None:
         """Read the input file.
 
-        This is a sample implementation. No error checking is done.
-
         Args:
             filename(str): The path to the input file.
         """
@@ -75,8 +73,6 @@ class SteinerPlot:
 
     def read_output(self, filename: str) -> bool:
         """Read the input file.
-
-        This is a sample implementation. No error checking is done.
 
         Args:
             filename(str): The path to the input file.
